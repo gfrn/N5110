@@ -225,8 +225,8 @@ int lcd_set_cursor(int row, int col)
   if (row < 0 || row > LCD_HEIGHT / 8 + 1 || col < 0 || col > LCD_WIDTH / 6 + 1)
     return 1;
 
-  char *rowb = "\x40";
-  char *colb = "\x80";
+  char rowb[1] = {(64|(row))};
+  char colb[1] = {(128|(col)*6)};
 
   lcd_write(0, rowb, 1);
   lcd_write(0, colb, 1);
@@ -288,13 +288,13 @@ void lcd_init()
   fd = open(device, O_RDWR);
   
   ioctl(fd, SPI_IOC_WR_MODE, &spi_mode);
-	ioctl(fd, SPI_IOC_RD_MODE, &spi_mode);
+  ioctl(fd, SPI_IOC_RD_MODE, &spi_mode);
 
-	ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
-	ioctl(fd, SPI_IOC_RD_BITS_PER_WORD, &bits);
+  ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
+  ioctl(fd, SPI_IOC_RD_BITS_PER_WORD, &bits);
 
-	ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
-	ioctl(fd, SPI_IOC_RD_MAX_SPEED_HZ, &speed);
+  ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
+  ioctl(fd, SPI_IOC_RD_MAX_SPEED_HZ, &speed);
 
   for (int i = 0; i < pin_len; i++)
   {
