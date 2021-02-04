@@ -220,7 +220,7 @@ void lcd_set_backlight(int state)
  * @retval 0 -> Success
  * @retval 1 -> X/Y position out of bounds
  */
-int lcd_set_cursor(int row, int col)
+int8_t lcd_set_cursor(int row, int col)
 {
   if (row < 0 || row > LCD_HEIGHT / 8 + 1 || col < 0 || col > LCD_WIDTH / 6 + 1)
     return 1;
@@ -261,18 +261,37 @@ void lcd_print(char *strn)
   {
     int c_index = (int)strn[i] - 32;
 
-    char stringWrite[5] = {
-      lcd_table[c_index][0], 
-      lcd_table[c_index][1], 
-      lcd_table[c_index][2], 
-      lcd_table[c_index][3], 
-      lcd_table[c_index][4]
-    }; // Unrolling on purpose
-
-    lcd_write(1, stringWrite, 5);
+    lcd_write(1, lcd_table[c_index], 5);
+    lcd_write(1, "\x00", 1); //Blank vertical line padding
   }
+}
 
-  lcd_write(1, "\x00", 1); //Blank vertical line padding
+/**
+ * @brief Prints straight horizontal line
+ * 
+ * @param[in] x Horizontal line starting position (x axis)
+ * @param[in] y Horizontal line starting position (y axis)
+ * @param[in] len Line length (in pixels)
+ */
+void lcd_line(int x, int y, int len)
+{
+	lcd_set_cursor(y/8, x/6);
+	int mod_x = x%6;
+	int mod_y = y%8;
+
+	int fix_len = len+1;
+
+	char c;
+	char full_char[fix_len]; 
+
+	c = pow(2,mod_y);
+
+	for(int i = 0; i < fix_len; i++)
+	{
+		full_char[i] = i >= mod_x ? c : 0;
+	}
+
+	lcd_write(1, full_char, fix_len);
 }
 
 /**
