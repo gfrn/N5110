@@ -1,35 +1,30 @@
-/// @file 5110_w.c
+/// @file lcd.c
 
-#include <stdint.h>
 #include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <getopt.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
-#include <linux/ioctl.h>
-#include <sys/stat.h>
-#include <linux/types.h>
 #include <linux/spi/spidev.h>
-#include <sys/time.h>
 #include <time.h>
 #include <iobb.h>
 
-#include "5110_w.h"
+#include "lcd.h"
+
+#define AUTOCS 0
 
 static uint32_t spi_mode = 0;
 static uint8_t bits = 8;
 static uint32_t speed = 400000;
-static uint16_t delay;
+static uint16_t tx_delay;
 static const char *device = "/dev/spidev0.0";
 static int fd;
 
 const Pin pins[] = {
     {9, 30}, // RST
-    {9, 17}, // CE0
+    {8, 7},  // CE0
     {8, 11}, // Backlight
-    {9, 15}  // DC
+    {9, 15}, // DC
+    {9, 14}  // DS
 };
 
 const char lcd_table[96][5] = {
@@ -141,23 +136,29 @@ const char lcd_table[96][5] = {
  *  @retval 0 -> Success
  *  @retval 1 -> Failure
  */
-int8_t transfer(uint8_t const *tx, uint8_t const *rx, size_t len)
+uint8_t transfer(uint8_t const *tx, uint8_t const *rx, size_t len)
 {
     int ret;
     struct spi_ioc_transfer tr = {
         .tx_buf = (unsigned long)tx,
         .rx_buf = (unsigned long)rx,
         .len = len,
-        .delay_usecs = delay,
+        .delay_usecs = tx_delay,
         .speed_hz = speed,
         .bits_per_word = bits,
     };
 
-    pin_low(pins[1].header, pins[1].pin);
-    ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
-    pin_high(pins[1].header, pins[1].pin);
+    if (!AUTOCS)
+        pin_low(pins[1].header, pins[1].pin);
 
-    return ret<0;
+    pin_high(pins[4].header, pins[4].pin);
+    ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
+    pin_low(pins[4].header, pins[4].pin);
+
+    if (!AUTOCS)
+        pin_high(pins[1].header, pins[1].pin);
+
+    return ret < 0;
 }
 
 /*!
@@ -167,103 +168,102 @@ int8_t transfer(uint8_t const *tx, uint8_t const *rx, size_t len)
  *  @returns void.
  *
  */
-void delay_ms(uint32_t ms)
+void delay(uint32_t ms)
 {
     struct timespec sleep;
     sleep.tv_sec = ms / 1000;
     sleep.tv_nsec = (ms % 1000) * 1000000L;
-    while (clock_nanosleep(CLOCK_MONOTONIC, 0, &sleep, &sleep));
+    while (clock_nanosleep(CLOCK_MONOTONIC, 0, &sleep, &sleep))
+        ;
 }
 
 /**
  * @brief Transfers to LCD register
- * 
+ *
  * @param[in] mode State to write to data command pin
  * @param[in] wr TX buffer
  * @returns Write operation result
  * @retval 0 -> Success
  * @retval 1 -> Failure
  */
-int8_t lcd_write(int mode, uint8_t const *wr, int len)
+int lcd_write(int mode, uint8_t const *wr, int len)
 {
-  int ret;
-  if (mode)
-    pin_high(pins[3].header, pins[3].pin);
-  else
-    pin_low(pins[3].header, pins[3].pin);
+    int ret;
+    if (mode)
+        pin_high(pins[3].header, pins[3].pin);
+    else
+        pin_low(pins[3].header, pins[3].pin);
 
-  ret = transfer(wr, wr, len);
-  return ret;
+    ret = transfer(wr, wr, len);
+    return ret;
 }
 
 /**
  * @brief Turns on or off LCD backlight
- * 
+ *
  * @param[in] state Desired backlight state (1 for on, 0 for off)
  * @returns void.
  */
 void lcd_set_backlight(int state)
 {
-  if (state)
-    pin_high(pins[2].header, pins[2].pin);
-  else
-    pin_low(pins[2].header, pins[2].pin);
+    if (state)
+        pin_high(pins[2].header, pins[2].pin);
+    else
+        pin_low(pins[2].header, pins[2].pin);
 }
 
 /**
  * @brief Sets LCD cursor position
- * 
+ *
  * @param[in] row Cursor Y position
  * @param[in] col Cursor X position
- * 
+ *
  * @return Result of cursor positioning operation
  * @retval 0 -> Success
  * @retval 1 -> X/Y position out of bounds
  */
-int8_t lcd_set_cursor(int row, int col)
+int lcd_set_cursor(int row, int col)
 {
-  if (row < 0 || row > LCD_HEIGHT / 8 + 1 || col < 0 || col > LCD_WIDTH / 6 + 1)
-    return 1;
+    if (row < 0 || row > LCD_HEIGHT / 8 + 1 || col < 0 || col > LCD_WIDTH / 6 + 1)
+        return 1;
 
-  char rowb[1] = {(64|(row))};
-  char colb[1] = {(128|(col)*6)};
+    char rowb[1] = {(64 | (row))};
+    char colb[1] = {(128 | (col)*6)};
 
-  lcd_write(0, rowb, 1);
-  lcd_write(0, colb, 1);
+    lcd_write(0, rowb, 1);
+    lcd_write(0, colb, 1);
 
-  return 0;
+    return 0;
 }
 
 /**
  * @brief Clears LCD
- * 
+ *
  * @returns void.
  */
 void lcd_clear()
 {
-  lcd_set_cursor(0, 0);
-  for (int i = 0; i < LCD_WIDTH * LCD_HEIGHT / 8; i++)
-  {
-    lcd_write(1, "\x00", 1);
-  }
+    lcd_set_cursor(0, 0);
+    for (int i = 0; i < LCD_WIDTH * LCD_HEIGHT / 8; i++)
+        lcd_write(1, "\x00", 1);
 }
 
 /**
  * @brief Prints string to LCD screen at a previously set position
- * 
+ *
  * @param[in] row String to write
  * @returns void.
  */
 void lcd_print(char *strn)
 {
-  int slen = strlen(strn);
-  for (int i = 0; i < slen; i++)
-  {
-    int c_index = (int)strn[i] - 32;
+    int slen = strlen(strn);
+    for (int i = 0; i < slen; i++)
+    {
+        int c_index = (int)strn[i] - 32;
 
-    lcd_write(1, lcd_table[c_index], 5);
-    lcd_write(1, "\x00", 1); //Blank vertical line padding
-  }
+        lcd_write(1, lcd_table[c_index], 5);
+        lcd_write(1, "\x00", 1); //Blank vertical line padding
+    }
 }
 
 /**
@@ -273,25 +273,29 @@ void lcd_print(char *strn)
  * @param[in] y Horizontal line starting position (y axis)
  * @param[in] len Line length (in pixels)
  */
-void lcd_line(int x, int y, int len)
+void lcd_line(int x, int y, int len, int thickness)
 {
-	lcd_set_cursor(y/8, x/6);
-	int mod_x = x%6;
-	int mod_y = y%8;
+    lcd_set_cursor(y / 8, x / 6);
+    int mod_x = x % 6;
+    int mod_y = y % 8;
 
-	int fix_len = len+1;
+    int fix_len = len + 1;
 
-	char c;
-	char full_char[fix_len]; 
+    char c;
+    char full_char[fix_len];
 
-	c = pow(2,mod_y);
+    c = 0x01 << mod_y;
 
-	for(int i = 0; i < fix_len; i++)
-	{
-		full_char[i] = i >= mod_x ? c : 0;
-	}
+    if (thickness > 1)
+    {
+        for (int i = 1; i < thickness; i++)
+            c |= c << 1;
+    }
 
-	lcd_write(1, full_char, fix_len);
+    for (int i = 0; i < fix_len; i++)
+        full_char[i] = i >= mod_x ? c : 0;
+
+    lcd_write(1, full_char, fix_len);
 }
 
 /**
@@ -301,42 +305,42 @@ void lcd_line(int x, int y, int len)
  */
 void lcd_init()
 {
-  iolib_init();
+    iolib_init();
 
-  int pin_len = sizeof(pins) / sizeof(pins[0]);
-  fd = open(device, O_RDWR);
-  
-  ioctl(fd, SPI_IOC_WR_MODE, &spi_mode);
-  ioctl(fd, SPI_IOC_RD_MODE, &spi_mode);
+    int pin_len = sizeof(pins) / sizeof(pins[0]);
+    fd = open(device, O_RDWR);
 
-  ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
-  ioctl(fd, SPI_IOC_RD_BITS_PER_WORD, &bits);
+    ioctl(fd, SPI_IOC_WR_MODE, &spi_mode);
+    ioctl(fd, SPI_IOC_RD_MODE, &spi_mode);
 
-  ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
-  ioctl(fd, SPI_IOC_RD_MAX_SPEED_HZ, &speed);
+    ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
+    ioctl(fd, SPI_IOC_RD_BITS_PER_WORD, &bits);
 
-  for (int i = 0; i < pin_len; i++)
-  {
-    iolib_setdir(pins[i].header, pins[i].pin, DigitalOut);
-  }
+    ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
+    ioctl(fd, SPI_IOC_RD_MAX_SPEED_HZ, &speed);
 
-  pin_low(pins[0].header, pins[0].pin); // Reset LCD
-  delay_ms(500);
-  pin_high(pins[0].header, pins[0].pin);
-  delay_ms(500);
+    for (int i = 0; i < pin_len; i++)
+    {
+        iolib_setdir(pins[i].header, pins[i].pin, DigitalOut);
+    }
 
-  lcd_write(0, "\x21", 1); // Ext. cmd set
-  lcd_write(0, "\xc0", 1); // LCD contrast (VOP)
-  lcd_write(0, "\x04", 1); // Temperature coefficient
-  lcd_write(0, "\x13", 1); // Voltage Bias
+    pin_low(pins[0].header, pins[0].pin); // Reset LCD
+    delay(500);
+    pin_high(pins[0].header, pins[0].pin);
+    delay(500);
 
-  lcd_write(0, "\x20", 1); // Normal cmd set
-  lcd_write(0, "\x0c", 1); // Normal display (0x0d for inverted)
+    lcd_write(0, "\x21", 1); // Ext. cmd set
+    lcd_write(0, "\xc0", 1); // LCD contrast (VOP)
+    lcd_write(0, "\x04", 1); // Temperature coefficient
+    lcd_write(0, "\x13", 1); // Voltage Bias
 
-  lcd_clear();
+    lcd_write(0, "\x20", 1); // Normal cmd set
+    lcd_write(0, "\x0c", 1); // Normal display (0x0d for inverted)
 
-  lcd_set_backlight(0);
-  lcd_set_cursor(0,0);
+    lcd_clear();
+
+    lcd_set_backlight(0);
+    lcd_set_cursor(0, 0);
 }
 
 /**
@@ -346,6 +350,6 @@ void lcd_init()
  */
 void lcd_close()
 {
-  iolib_free();
-  close(fd);
+    iolib_free();
+    close(fd);
 }

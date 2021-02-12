@@ -1,17 +1,28 @@
 #include <stdio.h>
 #include <unistd.h>
-#include "./lib/5110_w.h"
+#include <time.h>
+#include <iobb.h>
+#include "lcd.h"
 
 int main() 
 {
-    lcd_init(); // Initializes LCD
-    lcd_set_backlight(1); // Turns backlight on
-    lcd_clear(); // Clears LCD
+    lcd_init();
+    lcd_set_cursor(0,5);
+    lcd_print("Test");
 
-    lcd_print("Testing"); // Prints "testing"
+    sleep(1);
+    
+    for(int i = 0; i < 7; i++)
+    {
+	lcd_line(i*6,i,5,2);
+	usleep(300000);
+    }
 
-    lcd_set_cursor(1,0); // Sets cursor to row 1, column 0
-    lcd_print("Testing too");
+    for(int i = 6; i >= 0; i--)
+    {
+	lcd_line(78-(i*6),i,5,2);
+	usleep(300000);
+    }
 
     lcd_close();
 }
