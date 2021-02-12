@@ -24,7 +24,6 @@ const Pin pins[] = {
     {8, 7},  // CE0
     {8, 11}, // Backlight
     {9, 15}, // DC
-    {9, 14}  // DS
 };
 
 const char lcd_table[96][5] = {
@@ -151,9 +150,7 @@ uint8_t transfer(uint8_t const *tx, uint8_t const *rx, size_t len)
     if (!AUTOCS)
         pin_low(pins[1].header, pins[1].pin);
 
-    pin_high(pins[4].header, pins[4].pin);
     ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
-    pin_low(pins[4].header, pins[4].pin);
 
     if (!AUTOCS)
         pin_high(pins[1].header, pins[1].pin);
