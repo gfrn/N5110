@@ -6,7 +6,7 @@
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
 #include <time.h>
-#include <iobb.h>
+#include <stdio.h>
 
 #include "lcd.h"
 
@@ -19,12 +19,7 @@ static uint16_t tx_delay;
 static const char *device = "/dev/spidev0.0";
 static int fd;
 
-const Pin pins[] = {
-    {9, 30}, // RST
-    {8, 7},  // CE0
-    {8, 11}, // Backlight
-    {9, 15}, // DC
-};
+FILE *rst, *cs, *dc, *bl;
 
 const char lcd_table[96][5] = {
     "\x00\x00\x00\x00\x00", // space
@@ -125,6 +120,31 @@ const char lcd_table[96][5] = {
     "\x78\x46\x41\x46\x78"  // DEL
 };
 
+void pin_init(char *pin, FILE **file)
+{
+    FILE *pin_dir;
+    char file_loc[50];
+
+    snprintf(file_loc, 50, "/sys/class/gpio/%s/direction", pin);
+
+    pin_dir = fopen(file_loc, "w");
+    fseek(pin_dir,0,SEEK_SET);
+    fprintf(pin_dir,"out");
+
+    fclose(pin_dir);
+
+    snprintf(file_loc, 50, "/sys/class/gpio/%s/value", pin);
+
+    *file = fopen(file_loc, "w");
+    fseek(*file,0,SEEK_SET);
+}
+
+void pin_set(FILE* pin, int val)
+{
+    fprintf(pin, "%d", val);
+    fflush(pin);
+}
+
 /*!
  *  @brief Internal SPI transfer helper function.
  *
@@ -148,12 +168,12 @@ uint8_t transfer(uint8_t const *tx, uint8_t const *rx, size_t len)
     };
 
     if (!AUTOCS)
-        pin_low(pins[1].header, pins[1].pin);
+        pin_set(cs, 0);
 
     ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
 
     if (!AUTOCS)
-        pin_high(pins[1].header, pins[1].pin);
+        pin_set(cs, 1);
 
     return ret < 0;
 }
@@ -186,10 +206,7 @@ void delay(uint32_t ms)
 int lcd_write(int mode, uint8_t const *wr, int len)
 {
     int ret;
-    if (mode)
-        pin_high(pins[3].header, pins[3].pin);
-    else
-        pin_low(pins[3].header, pins[3].pin);
+    pin_set(dc, mode);
 
     ret = transfer(wr, wr, len);
     return ret;
@@ -203,10 +220,7 @@ int lcd_write(int mode, uint8_t const *wr, int len)
  */
 void lcd_set_backlight(int state)
 {
-    if (state)
-        pin_high(pins[2].header, pins[2].pin);
-    else
-        pin_low(pins[2].header, pins[2].pin);
+	pin_set(bl, state);
 }
 
 /**
@@ -302,9 +316,6 @@ void lcd_line(int x, int y, int len, int thickness)
  */
 void lcd_init()
 {
-    iolib_init();
-
-    int pin_len = sizeof(pins) / sizeof(pins[0]);
     fd = open(device, O_RDWR);
 
     ioctl(fd, SPI_IOC_WR_MODE, &spi_mode);
@@ -316,14 +327,14 @@ void lcd_init()
     ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
     ioctl(fd, SPI_IOC_RD_MAX_SPEED_HZ, &speed);
 
-    for (int i = 0; i < pin_len; i++)
-    {
-        iolib_setdir(pins[i].header, pins[i].pin, DigitalOut);
-    }
+    pin_init(P9_30, &rst);
+    pin_init(P8_7,  &cs);
+    pin_init(P8_11, &bl);
+    pin_init(P9_15, &dc);
 
-    pin_low(pins[0].header, pins[0].pin); // Reset LCD
+    pin_set(rst, 0);
     delay(500);
-    pin_high(pins[0].header, pins[0].pin);
+    pin_set(rst, 1);
     delay(500);
 
     lcd_write(0, "\x21", 1); // Ext. cmd set
@@ -347,6 +358,5 @@ void lcd_init()
  */
 void lcd_close()
 {
-    iolib_free();
     close(fd);
 }

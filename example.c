@@ -4,25 +4,28 @@
 #include <iobb.h>
 #include "lcd.h"
 
-int main() 
+int main()
 {
     lcd_init();
-    lcd_set_cursor(0,5);
-    lcd_print("Test");
+    lcd_set_cursor(0, 5);
+    lcd_print("Hello!");
 
     sleep(1);
-    
-    for(int i = 0; i < 7; i++)
+
+    for (int i = 0; i < 7; i++)
     {
-	lcd_line(i*6,i,5,2);
-	usleep(300000);
+        lcd_line(i * 6, i, 5, 2);
+        usleep(300000);
     }
 
-    for(int i = 6; i >= 0; i--)
+    for (int i = 6; i >= 0; i--)
     {
-	lcd_line(78-(i*6),i,5,2);
-	usleep(300000);
+        lcd_line(78 - (i * 6), i, 5, 2);
+        usleep(300000);
     }
+    
+    lcd_set_cursor(2, 5);
+    lcd_print("Hello again!");
 
     lcd_close();
 }
